@@ -69,7 +69,8 @@ def test_drop_rows_only_when_selected_column_is_missing():
 
 
 def test_all_missing_numeric_column_is_left_unchanged_for_median():
-    original = pd.DataFrame({"score": [None, None]})
+    # Explicit dtype matters: [None, None] alone is inferred as object, not numeric.
+    original = pd.DataFrame({"score": pd.Series([None, None], dtype="float64")})
     cleaned, changes = apply_missing_value_rules(
         original, [(0, "Fill with median")]
     )
