@@ -1,0 +1,68 @@
+{
+  "input_file": "C:\\Users\\CEN GLOBAL SERVICES\\Desktop\\test\\messy_customers.csv",
+  "input_format": ".csv",
+  "encoding_used": "utf-8-sig",
+  "started_at": "2026-10-10T19:28:13.936553+01:00",
+  "original_shape": {
+    "rows": 8,
+    "columns": 4
+  },
+  "actions": [
+    {
+      "action": "standardized_column_names",
+      "changed": [
+        {
+          "from": "Customer Name",
+          "to": "customer_name"
+        },
+        {
+          "from": "Age",
+          "to": "age"
+        },
+        {
+          "from": "City",
+          "to": "city"
+        },
+        {
+          "from": "Email",
+          "to": "email"
+        }
+      ]
+    },
+    {
+      "action": "trimmed_text_whitespace",
+      "cells_changed": 7
+    },
+    {
+      "action": "removed_duplicate_rows",
+      "rows_removed": 1,
+      "policy": "kept first occurrence"
+    },
+    {
+      "action": "dropped_rows_with_missing_values",
+      "column": "city",
+      "rows_removed": 1
+    },
+    {
+      "action": "dropped_rows_with_missing_values",
+      "column": "email",
+      "rows_removed": 1
+    }
+  ],
+  "warnings": [],
+  "unresolved_issues": [
+    {
+      "issue": "missing_values",
+      "column": "age",
+      "count": 1,
+      "decision": "kept missing"
+    }
+  ],
+  "final_shape": {
+    "rows": 5,
+    "columns": 4
+  },
+  "finished_at": "2026-10-10T19:28:50.262082+01:00",
+  "output_file": "C:\\Users\\CEN GLOBAL SERVICES\\Desktop\\test\\messy_customers_cleaned.csv",
+  "report_file": "C:\\Users\\CEN GLOBAL SERVICES\\Desktop\\test\\messy_customers_cleaning_report.json"
+}
