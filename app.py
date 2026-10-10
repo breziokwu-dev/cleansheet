@@ -62,6 +62,7 @@ from cleaning_rules import (
     standardize_columns,
     trim_text_values,
 )
+from cleaning_report import build_cleaning_report
 
 
 def dataframe_to_excel(df):
@@ -350,26 +351,12 @@ with tab_clean:
         )
         changes.extend(missing_changes)
 
-        report = {
-            "file_name": uploaded_file.name,
-            "original_rows": int(len(original)),
-            "cleaned_rows": int(len(cleaned)),
-            "original_columns": int(len(original.columns)),
-            "cleaned_columns": int(len(cleaned.columns)),
-            "original_missing_cells": int(
-                original.isna().sum().sum()
-            ),
-            "cleaned_missing_cells": int(
-                cleaned.isna().sum().sum()
-            ),
-            "original_duplicate_rows": int(
-                original.duplicated().sum()
-            ),
-            "cleaned_duplicate_rows": int(
-                cleaned.duplicated().sum()
-            ),
-            "changes": changes,
-        }
+        report = build_cleaning_report(
+            original=original,
+            cleaned=cleaned,
+            file_name=uploaded_file.name,
+            changes=changes,
+        )
 
         st.session_state["cleaned_data"] = cleaned
         st.session_state["cleaning_report"] = report
