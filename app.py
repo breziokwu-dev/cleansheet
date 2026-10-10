@@ -437,5 +437,9 @@ if (
     except Exception as error:
         st.error(f"Could not prepare downloads: {error}")
 
-    with st.expander("View cleaning report"):
+    with st.expander("View per-column missing-value changes"):
+        column_report = pd.DataFrame(report["column_missing_values"])
+        st.dataframe(column_report, use_container_width=True)
+
+    with st.expander("View full cleaning report"):
         st.json(report)
