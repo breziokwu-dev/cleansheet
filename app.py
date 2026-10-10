@@ -1,6 +1,5 @@
 
 import json
-import re
 from io import BytesIO
 
 import pandas as pd
@@ -58,41 +57,11 @@ st.markdown("""
 
 # -------------------- HELPERS --------------------
 
-def standardize_columns(columns):
-    """Convert column names into consistent snake_case names."""
-    result = []
-    seen = {}
-
-    for column in columns:
-        name = str(column).strip().lower()
-        name = re.sub(r"\s+", "_", name)
-        name = re.sub(r"[^a-z0-9_]", "", name)
-        name = name.strip("_") or "column"
-
-        count = seen.get(name, 0) + 1
-        seen[name] = count
-
-        if count > 1:
-            name = f"{name}_{count}"
-
-        result.append(name)
-
-    return result
-
-
-def trim_text_values(df):
-    """Trim surrounding spaces without changing non-text values."""
-    result = df.copy()
-
-    for column in result.select_dtypes(
-        include=["object", "string"]
-    ).columns:
-        result[column] = result[column].map(
-            lambda value: value.strip()
-            if isinstance(value, str) else value
-        )
-
-    return result
+from cleaning_rules import (
+    apply_missing_value_rules,
+    standardize_columns,
+    trim_text_values,
+)
 
 
 def dataframe_to_excel(df):
@@ -283,16 +252,31 @@ with tab_clean:
         )
 
         st.markdown("#### Missing values")
+        st.caption("Choose a rule separately for each column. The default is to leave values unchanged.")
 
-        missing_action = st.selectbox(
-            "Apply this rule to missing values",
-            [
+        missing_rules = []
+        for position, column in enumerate(original.columns):
+            series = original.iloc[:, position]
+            dtype = series.dtype
+            options = [
                 "Leave unchanged",
-                "Remove rows containing missing values",
-                "Fill missing text with 'Unknown'",
-                "Fill missing numbers with the column median",
-            ],
-        )
+                "Drop rows where this column is missing",
+                "Fill with most frequent value",
+            ]
+            if pd.api.types.is_numeric_dtype(dtype):
+                options.extend([
+                    "Fill with median",
+                    "Fill with mean",
+                ])
+            else:
+                options.append("Fill with 'Unknown'")
+
+            action = st.selectbox(
+                f"{position + 1}. {str(column)} ({int(series.isna().sum())} missing)",
+                options,
+                key=f"missing_rule_{position}",
+            )
+            missing_rules.append((position, action))
 
         st.markdown("#### Optional numeric conversion")
 
@@ -360,31 +344,11 @@ with tab_clean:
             removed = before - len(cleaned)
             changes.append(f"Removed {removed} duplicate rows.")
 
-        if missing_action == "Remove rows containing missing values":
-            before = len(cleaned)
-            cleaned = cleaned.dropna().copy()
-            changes.append(
-                f"Removed {before - len(cleaned)} rows with missing values."
-            )
-
-        elif missing_action == "Fill missing text with 'Unknown'":
-            for column in cleaned.select_dtypes(
-                include=["object", "string"]
-            ).columns:
-                cleaned[column] = cleaned[column].fillna("Unknown")
-
-            changes.append("Filled missing text values with 'Unknown'.")
-
-        elif missing_action == "Fill missing numbers with the column median":
-            for column in cleaned.select_dtypes(
-                include="number"
-            ).columns:
-                median = cleaned[column].median()
-
-                if pd.notna(median):
-                    cleaned[column] = cleaned[column].fillna(median)
-
-            changes.append("Filled missing numeric values with column medians.")
+        cleaned, missing_changes = apply_missing_value_rules(
+            cleaned,
+            missing_rules,
+        )
+        changes.extend(missing_changes)
 
         report = {
             "file_name": uploaded_file.name,
