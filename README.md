@@ -13,6 +13,19 @@ CleanSheet is a small Python data-cleaning project for CSV and Excel (`.xlsx`) f
 - Export cleaned data as CSV or Excel, plus a JSON report from the web app.
 - Use the command-line tool for a guided cleaning workflow and a separate JSON report.
 
+## Try the demo dataset
+
+A small, **synthetic** sales spreadsheet is included at [`examples/demo_sales.csv`](examples/demo_sales.csv). It contains intentionally messy examples such as extra spaces, missing values, and duplicate rows.
+
+1. Run CleanSheet using the setup instructions below.
+2. Upload `examples/demo_sales.csv`.
+3. Review the overview and data-quality report.
+4. Try trimming spaces and standardizing column names.
+5. If you choose to remove duplicates or drop rows with missing values, read the confirmation prompt carefully.
+6. Download the cleaned file and report, then compare them with the original.
+
+The demo contains invented data only; it is suitable for screenshots or demonstrations without exposing anyone's real records.
+
 ## Early customer pilot
 
 CleanSheet is being prepared for a small, non-sensitive data-cleaning service pilot before a self-service launch. The current application is still a prototype; customer-facing workflows and data-handling practices must be validated before using it with real or confidential datasets.
