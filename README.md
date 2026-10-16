@@ -80,4 +80,6 @@ The CLI asks before applying certain changes and writes a separate cleaned file 
 
 ## Project status
 
-CleanSheet is an evolving learning project. Features, validation, and automated tests will be improved over time.
+CleanSheet is an early prototype being prepared for real-world testing. It is not yet advertised as production-ready.
+
+Before using it for business-critical data, verify the exported results against the original dataset. Do not upload confidential or personal data to any publicly hosted instance until its deployment, access controls, and data-handling practices have been reviewed. The current app processes uploaded files during a session and does not provide accounts, persistent project storage, or a formal data-retention policy.
