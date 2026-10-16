@@ -253,6 +253,13 @@ with tab_clean:
         remove_duplicates = st.checkbox(
             "Remove duplicate rows",
             value=False,
+            help="When enabled, later duplicate rows will be excluded from the exported dataset.",
+        )
+
+        confirm_row_removal = st.checkbox(
+            "I understand that selected rules may remove rows from the exported dataset.",
+            value=False,
+            help="Required when removing duplicates or dropping rows with missing values.",
         )
 
         st.markdown("#### Missing values")
@@ -313,6 +320,20 @@ with tab_clean:
             conversion_options.index(option)
             for option in convert_columns
         ]
+
+        row_dropping_rules = [
+            position
+            for position, action in missing_rules
+            if action == "Drop rows where this column is missing"
+        ]
+        if (remove_duplicates or row_dropping_rules) and not confirm_row_removal:
+            st.error(
+                "Before applying these rules, confirm that you understand rows "
+                "may be excluded from the exported dataset. Review the selected "
+                "row-removal settings, tick the confirmation checkbox, and submit again."
+            )
+            st.stop()
+
         incompatible_unknown_fills = [
             position + 1
             for position, action in missing_rules
