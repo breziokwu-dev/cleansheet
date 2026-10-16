@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from zipfile import BadZipFile
 from typing import Any
 
 import pandas as pd
@@ -36,7 +37,7 @@ def read_tabular_file(file_obj: Any, filename: str) -> pd.DataFrame:
 
     try:
         return pd.read_excel(BytesIO(raw_bytes), engine="openpyxl")
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, BadZipFile) as exc:
         raise ValueError(
             "Could not read this Excel file. Make sure it is a valid .xlsx workbook."
         ) from exc
