@@ -5,6 +5,8 @@ CleanSheet is a small Python data-cleaning project for CSV and Excel (`.xlsx`) f
 ## Features
 
 - Preview uploaded data and inspect row, column, missing-value, and duplicate counts.
+- Read UTF-8 CSVs (including Excel-friendly BOM files) and fall back to a common Windows CSV encoding when needed.
+- Download outputs with filenames based on the source file.
 - Review data quality by column.
 - Trim surrounding whitespace and standardize column names.
 - Choose cleaning operations before exporting the result.
