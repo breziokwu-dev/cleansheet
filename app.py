@@ -62,19 +62,35 @@ st.markdown("""
 
 from cleaning_rules import (
     apply_missing_value_rules,
+    detect_date_columns,
+    format_date_column,
     standardize_columns,
     trim_text_values,
 )
 from cleaning_report import build_cleaning_report
 
 
-def dataframe_to_excel(df):
-    """Create an Excel file in memory."""
-    output = BytesIO()
+def dataframe_to_excel(df, format_header=False):
+    """Create an Excel file in memory, optionally styling its header row."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
+    output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Cleaned Data")
-
+        if format_header:
+            worksheet = writer.sheets["Cleaned Data"]
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor="245A81")
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            worksheet.row_dimensions[1].height = 24
+            for position, column in enumerate(df.columns, start=1):
+                values = [str(column)] + [
+                    str(value) for value in df.iloc[:200, position - 1].dropna()
+                ]
+                width = min(max(max((len(value) for value in values), default=10) + 2, 12), 36)
+                worksheet.column_dimensions[get_column_letter(position)].width = width
     return output.getvalue()
 
 
@@ -246,8 +262,81 @@ with tab_clean:
         )
 
         normalize_columns = st.checkbox(
-            "Standardize column names",
+            "Customize column names",
             value=True,
+            help="Choose capitalization, separators, or custom names below.",
+        )
+
+        column_case = st.selectbox(
+            "Column-name capitalization",
+            options=["Keep original", "lowercase", "UPPERCASE", "Title Case"],
+            index=1,
+            disabled=not normalize_columns,
+        )
+        column_separator = st.selectbox(
+            "Word separator",
+            options=["Space", "Underscore (_)", "Hyphen (-)"],
+            index=1,
+            disabled=not normalize_columns,
+        )
+        custom_column_names = st.checkbox(
+            "Enter custom names for individual columns",
+            value=False,
+            disabled=not normalize_columns,
+        )
+        custom_names = []
+        if custom_column_names:
+            st.caption("Leave a field unchanged to keep its current column name.")
+            for position, column in enumerate(original.columns):
+                custom_names.append(
+                    st.text_input(
+                        f"Custom name for column {position + 1}: {str(column)}",
+                        value=str(column),
+                        key=f"custom_column_name_{position}",
+                    )
+                )
+
+        st.markdown("#### Date formatting")
+        date_candidates = detect_date_columns(original)
+        if date_candidates:
+            st.caption(
+                "Suggested date columns are preselected. Review them before applying; "
+                "date detection is a suggestion, not a guarantee."
+            )
+        date_options = [
+            f"{position + 1}. {str(column)}"
+            for position, column in enumerate(original.columns)
+        ]
+        date_columns = st.multiselect(
+            "Columns to format as dates",
+            options=date_options,
+            default=[date_options[position] for position in date_candidates],
+            help="Only selected columns will be converted. Unparseable values are kept and reported.",
+        )
+        date_output_label = st.selectbox(
+            "Output date format",
+            options=[
+                "2026-10-16 (YYYY-MM-DD)",
+                "16/10/2026 (DD/MM/YYYY)",
+                "10/16/2026 (MM/DD/YYYY)",
+                "16-10-2026 (DD-MM-YYYY)",
+                "16 Oct 2026 (DD Mon YYYY)",
+                "October 16, 2026 (Month DD, YYYY)",
+            ],
+            index=0,
+        )
+        date_day_first = st.radio(
+            "Interpret ambiguous numeric dates as",
+            options=["Day first (16/10/2026)", "Month first (10/16/2026)"],
+            horizontal=True,
+            help="This choice matters for ambiguous dates such as 03/04/2026.",
+        )
+
+        st.markdown("#### Excel export formatting")
+        format_excel_header = st.checkbox(
+            "Style the Excel header row",
+            value=True,
+            help="Applies bold white text, a coloured background, and adjusted column widths to Excel exports only.",
         )
 
         remove_duplicates = st.checkbox(
@@ -320,6 +409,9 @@ with tab_clean:
             conversion_options.index(option)
             for option in convert_columns
         ]
+        selected_date_positions = [
+            date_options.index(option) for option in date_columns
+        ]
 
         row_dropping_rules = [
             position
@@ -358,8 +450,50 @@ with tab_clean:
             changes.append("Trimmed surrounding spaces in text columns.")
 
         if normalize_columns:
-            cleaned.columns = standardize_columns(cleaned.columns)
-            changes.append("Standardized column names.")
+            case_map = {
+                "Keep original": "keep",
+                "lowercase": "lower",
+                "UPPERCASE": "upper",
+                "Title Case": "title",
+            }
+            separator_map = {
+                "Space": "space",
+                "Underscore (_)": "underscore",
+                "Hyphen (-)": "hyphen",
+            }
+            cleaned.columns = standardize_columns(
+                list(cleaned.columns),
+                case_style=case_map[column_case],
+                separator=separator_map[column_separator],
+                custom_names=custom_names if custom_column_names else None,
+            )
+            changes.append(
+                f"Customized column names (case: {column_case}; separator: {column_separator})."
+            )
+
+        date_format_map = {
+            "2026-10-16 (YYYY-MM-DD)": "%Y-%m-%d",
+            "16/10/2026 (DD/MM/YYYY)": "%d/%m/%Y",
+            "10/16/2026 (MM/DD/YYYY)": "%m/%d/%Y",
+            "16-10-2026 (DD-MM-YYYY)": "%d-%m-%Y",
+            "16 Oct 2026 (DD Mon YYYY)": "%d %b %Y",
+            "October 16, 2026 (Month DD, YYYY)": "%B %d, %Y",
+        }
+        for position in selected_date_positions:
+            formatted, failures = format_date_column(
+                cleaned.iloc[:, position],
+                output_format=date_format_map[date_output_label],
+                day_first=date_day_first.startswith("Day first"),
+            )
+            cleaned.isetitem(position, formatted)
+            changes.append({
+                "Date formatting": {
+                    "column": str(cleaned.columns[position]),
+                    "position": position + 1,
+                    "format": date_output_label,
+                    "unparsed_non_empty_values_kept": failures,
+                }
+            })
 
         if convert_columns:
             converted = []
@@ -408,6 +542,7 @@ with tab_clean:
         st.session_state["cleaning_report"] = report
         st.session_state["source_file_name"] = uploaded_file.name
         st.session_state["source_fingerprint"] = source_fingerprint
+        st.session_state["format_excel_header"] = format_excel_header
 
         st.success("Cleaning completed. Review the results below.")
 
@@ -448,7 +583,10 @@ if (
     st.subheader("Download your results")
 
     try:
-        excel_bytes = dataframe_to_excel(cleaned)
+        excel_bytes = dataframe_to_excel(
+            cleaned,
+            format_header=st.session_state.get("format_excel_header", False),
+        )
 
         d1, d2, d3 = st.columns(3)
 
