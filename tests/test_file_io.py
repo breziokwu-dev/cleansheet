@@ -45,3 +45,7 @@ def test_download_filename_uses_safe_source_name():
 def test_rejects_unsupported_download_extension():
     with pytest.raises(ValueError, match="Unsupported output extension"):
         cleaned_filename("people.csv", ".exe")
+
+def test_invalid_excel_file_has_helpful_message():
+    with pytest.raises(ValueError, match="valid .xlsx workbook"):
+        read_tabular_file(BytesIO(b"not an excel workbook"), "broken.xlsx")
