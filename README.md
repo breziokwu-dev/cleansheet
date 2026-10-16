@@ -11,6 +11,12 @@ CleanSheet is a small Python data-cleaning project for CSV and Excel (`.xlsx`) f
 - Export cleaned data as CSV or Excel, plus a JSON report from the web app.
 - Use the command-line tool for a guided cleaning workflow and a separate JSON report.
 
+## Early customer pilot
+
+CleanSheet is being prepared for a small, non-sensitive data-cleaning service pilot before a self-service launch. The current application is still a prototype; customer-facing workflows and data-handling practices must be validated before using it with real or confidential datasets.
+
+See [the first-customer plan](docs/first-customer-plan.md) for the proposed service scope, validation steps, and data-handling checklist.
+
 ## Requirements
 
 - Python 3.10 or newer
