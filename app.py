@@ -1,4 +1,5 @@
 
+import hashlib
 import json
 from io import BytesIO
 
@@ -148,6 +149,11 @@ if uploaded_file is None:
 
 # -------------------- LOAD DATA --------------------
 
+# A filename alone is not a reliable identity: users can upload a different
+# file with the same name. Tie results to the actual uploaded bytes.
+uploaded_file_bytes = uploaded_file.getvalue()
+source_fingerprint = hashlib.sha256(uploaded_file_bytes).hexdigest()
+
 try:
     original = load_file(uploaded_file)
 except Exception as error:
@@ -281,12 +287,18 @@ with tab_clean:
 
         st.markdown("#### Optional numeric conversion")
 
+        # Position-based labels keep columns selectable even when names repeat.
+        conversion_options = [
+            f"{position + 1}. {str(column)}"
+            for position, column in enumerate(original.columns)
+        ]
         convert_columns = st.multiselect(
             "Choose columns to convert to numbers",
-            options=list(original.columns),
+            options=conversion_options,
             help=(
                 "Only selected columns are converted. "
-                "Unconvertible values become missing values."
+                "Unconvertible values become missing values. "
+                "The number identifies the column if names repeat."
             ),
         )
 
@@ -310,26 +322,24 @@ with tab_clean:
 
         if convert_columns:
             converted = []
+            selected_positions = [
+                conversion_options.index(option)
+                for option in convert_columns
+            ]
 
-            for old_name in convert_columns:
-                # Resolve the current column name after standardization.
-                if normalize_columns:
-                    position = list(original.columns).index(old_name)
-                    column_name = cleaned.columns[position]
-                else:
-                    column_name = old_name
+            for position in selected_positions:
+                column_name = str(cleaned.columns[position])
+                series = cleaned.iloc[:, position]
+                before_missing = int(series.isna().sum())
+                numeric_series = pd.to_numeric(series, errors="coerce")
+                after_missing = int(numeric_series.isna().sum())
 
-                before_missing = int(cleaned[column_name].isna().sum())
-
-                cleaned[column_name] = pd.to_numeric(
-                    cleaned[column_name],
-                    errors="coerce",
-                )
-
-                after_missing = int(cleaned[column_name].isna().sum())
+                # Assign by position to support duplicate column names safely.
+                cleaned.isetitem(position, numeric_series)
 
                 converted.append({
-                    "column": str(column_name),
+                    "column": column_name,
+                    "position": position + 1,
                     "newly_missing": max(
                         0, after_missing - before_missing
                     ),
@@ -361,6 +371,7 @@ with tab_clean:
         st.session_state["cleaned_data"] = cleaned
         st.session_state["cleaning_report"] = report
         st.session_state["source_file_name"] = uploaded_file.name
+        st.session_state["source_fingerprint"] = source_fingerprint
 
         st.success("Cleaning completed. Review the results below.")
 
@@ -369,7 +380,7 @@ with tab_clean:
 
 if (
     "cleaned_data" in st.session_state
-    and st.session_state.get("source_file_name") == uploaded_file.name
+    and st.session_state.get("source_fingerprint") == source_fingerprint
 ):
     cleaned = st.session_state["cleaned_data"]
     report = st.session_state["cleaning_report"]
