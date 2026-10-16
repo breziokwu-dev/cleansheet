@@ -378,6 +378,7 @@ with tab_clean:
 if (
     "cleaned_data" in st.session_state
     and st.session_state.get("source_fingerprint") == source_fingerprint
+    and st.session_state.get("source_file_name") == uploaded_file.name
 ):
     cleaned = st.session_state["cleaned_data"]
     report = st.session_state["cleaning_report"]
