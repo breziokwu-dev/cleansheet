@@ -1,0 +1,11 @@
+Order ID,Customer Name,Product,Quantity,Unit Price,Order Date,Payment Status
+ORD-001," Ada Okafor ",Notebook,3,1200,2026-09-02,Paid
+ORD-002,Chidi Nwosu,Pen,10,150,2026-09-03,Paid
+ORD-003," Ada Okafor ",Notebook,3,1200,2026-09-02,Paid
+ORD-004,Grace Bello,Desk Organizer,2,4500,2026-09-05,Pending
+ORD-005,Emeka Obi,Pen,,150,2026-09-06,Paid
+ORD-006,"  Zainab Musa",File Folder,5,800,2026-09-07,
+ORD-007,Tunde Adebayo,Notebook,4,1200,2026-09-08,Paid
+ORD-008,Grace Bello,Desk Organizer,2,4500,2026-09-05,Pending
+ORD-009,Ifunanya Eze,Marker,6,300,2026-09-10,Pending
+ORD-010,Chidi Nwosu,Pen,8,150,2026-09-11,Paid
