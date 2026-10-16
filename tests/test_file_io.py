@@ -28,12 +28,12 @@ def test_rejects_unsupported_file_extension():
 
 def test_rejects_empty_file_with_helpful_message():
     with pytest.raises(ValueError, match="file is empty"):
-        read_tabular_file(BytesIO(b"\n\n"), "empty.csv")
+        read_tabular_file(BytesIO(b""), "empty.csv")
 
 
 def test_reports_csv_without_readable_content():
     with pytest.raises(ValueError, match="no readable rows or columns"):
-        read_tabular_file(BytesIO(b""), "empty.csv")
+        read_tabular_file(BytesIO(b"\n\n"), "empty.csv")
 
 
 def test_download_filename_uses_safe_source_name():
