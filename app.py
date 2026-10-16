@@ -6,6 +6,8 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from file_io import cleaned_filename, read_tabular_file
+
 
 # -------------------- PAGE CONFIG --------------------
 
@@ -78,12 +80,7 @@ def dataframe_to_excel(df):
 
 def load_file(uploaded_file):
     """Read CSV or Excel while keeping the upload untouched."""
-    uploaded_file.seek(0)
-
-    if uploaded_file.name.lower().endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-
-    return pd.read_excel(uploaded_file)
+    return read_tabular_file(uploaded_file, uploaded_file.name)
 
 
 # -------------------- SIDEBAR --------------------
@@ -418,8 +415,8 @@ if (
         with d1:
             st.download_button(
                 "Download cleaned CSV",
-                data=cleaned.to_csv(index=False).encode("utf-8"),
-                file_name="cleaned_data.csv",
+                data=cleaned.to_csv(index=False).encode("utf-8-sig"),
+                file_name=cleaned_filename(uploaded_file.name, ".csv"),
                 mime="text/csv",
                 use_container_width=True,
             )
@@ -428,7 +425,7 @@ if (
             st.download_button(
                 "Download cleaned Excel",
                 data=excel_bytes,
-                file_name="cleaned_data.xlsx",
+                file_name=cleaned_filename(uploaded_file.name, ".xlsx"),
                 mime=(
                     "application/vnd.openxmlformats-officedocument."
                     "spreadsheetml.sheet"
@@ -440,7 +437,7 @@ if (
             st.download_button(
                 "Download JSON report",
                 data=json.dumps(report, indent=2, default=str),
-                file_name="cleaning_report.json",
+                file_name=cleaned_filename(uploaded_file.name, ".json"),
                 mime="application/json",
                 use_container_width=True,
             )
