@@ -256,7 +256,10 @@ with tab_clean:
         )
 
         st.markdown("#### Missing values")
-        st.caption("Choose a rule separately for each column. The default is to leave values unchanged.")
+        st.caption(
+            "Choose a rule separately for each column. Numeric conversion runs "
+            "before these rules, so choose a compatible fill method for converted columns."
+        )
 
         missing_rules = []
         for position, column in enumerate(original.columns):
@@ -306,6 +309,26 @@ with tab_clean:
         )
 
     if submitted:
+        selected_positions = [
+            conversion_options.index(option)
+            for option in convert_columns
+        ]
+        incompatible_unknown_fills = [
+            position + 1
+            for position, action in missing_rules
+            if position in selected_positions and action == "Fill with 'Unknown'"
+        ]
+
+        if incompatible_unknown_fills:
+            columns_text = ", ".join(str(position) for position in incompatible_unknown_fills)
+            st.error(
+                "You selected numeric conversion and 'Fill with Unknown' for "
+                f"the same column(s): {columns_text}. Choose 'Leave unchanged' "
+                "or another compatible missing-value rule for those columns, "
+                "then apply cleaning again."
+            )
+            st.stop()
+
         cleaned = original.copy(deep=True)
         changes = []
 
@@ -319,11 +342,6 @@ with tab_clean:
 
         if convert_columns:
             converted = []
-            selected_positions = [
-                conversion_options.index(option)
-                for option in convert_columns
-            ]
-
             for position in selected_positions:
                 column_name = str(cleaned.columns[position])
                 series = cleaned.iloc[:, position]
