@@ -28,14 +28,14 @@ def standardize_columns(
 
     for position, column in enumerate(columns):
         raw = str(custom_names[position] if custom_names is not None else column).strip()
-        words = re.sub(r"[\\s_-]+", " ", raw).strip()
+        words = re.sub(r"[\s_-]+", " ", raw).strip()
         if case_style == "lower":
             words = words.lower()
         elif case_style == "upper":
             words = words.upper()
         elif case_style == "title":
             words = words.title()
-        name = re.sub(r"\\s+", joiner, words).strip(" _-")
+        name = re.sub(r"\s+", joiner, words).strip(" _-")
         if not name:
             name = f"Column{position + 1}" if case_style in {"keep", "title"} else f"column{position + 1}"
 
@@ -53,7 +53,7 @@ def detect_date_columns(df: pd.DataFrame) -> list[int]:
     """Suggest likely date columns without changing the original data."""
     candidates: list[int] = []
     pattern = re.compile(
-        r"[-/.:]|\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\b",
+        r"[-/.:]|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b",
         re.IGNORECASE,
     )
     for position in range(len(df.columns)):
