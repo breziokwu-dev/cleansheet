@@ -6,7 +6,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from file_io import cleaned_filename, read_tabular_file
+from file_io import cleaned_filename, read_tabular_file, spreadsheet_safe_dataframe
 
 
 # -------------------- PAGE CONFIG --------------------
@@ -83,6 +83,18 @@ def load_file(uploaded_file):
     return read_tabular_file(uploaded_file, uploaded_file.name)
 
 
+def clear_session_data():
+    """Clear app-owned results and reset the uploader on the next rerun."""
+    for key in (
+        "cleaned_data",
+        "cleaning_report",
+        "source_file_name",
+        "source_fingerprint",
+        "upload",
+    ):
+        st.session_state.pop(key, None)
+
+
 # -------------------- SIDEBAR --------------------
 
 with st.sidebar:
@@ -94,7 +106,11 @@ with st.sidebar:
     uploaded_file = st.file_uploader(
         "Upload your dataset",
         type=["csv", "xlsx"],
-        help="Supported formats: CSV and Excel (.xlsx).",
+        key="upload",
+        help=(
+            "CSV and .xlsx only. Maximum 10 MB, 100,000 rows, and 500 columns. "
+            "Use non-sensitive files while this prototype is being validated."
+        ),
     )
 
     st.divider()
@@ -108,7 +124,16 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("CleanSheet 2.0 · Local prototype")
+    st.caption(
+        "Files are processed for this session. Avoid confidential or personal data. "
+        "Use Clear session data when finished."
+    )
+    st.button(
+        "Clear session data",
+        on_click=clear_session_data,
+        use_container_width=True,
+        help="Clear CleanSheet's results and reset the file uploader in this browser session.",
+    )
 
 
 # -------------------- MAIN HEADER --------------------
@@ -146,19 +171,35 @@ if uploaded_file is None:
 
 # -------------------- LOAD DATA --------------------
 
-# A filename alone is not a reliable identity: users can upload a different
-# file with the same name. Tie results to the actual uploaded bytes.
 uploaded_file_bytes = uploaded_file.getvalue()
+if len(uploaded_file_bytes) > 10 * 1024 * 1024:
+    st.error("This file exceeds CleanSheet's 10 MB limit. Choose a smaller file.")
+    st.stop()
+
 source_fingerprint = hashlib.sha256(uploaded_file_bytes).hexdigest()
+
+# Discard the previous result when the user selects a different file.
+if (
+    st.session_state.get("source_fingerprint") is not None
+    and st.session_state.get("source_fingerprint") != source_fingerprint
+):
+    for key in ("cleaned_data", "cleaning_report", "source_file_name", "source_fingerprint"):
+        st.session_state.pop(key, None)
 
 try:
     original = load_file(uploaded_file)
-except Exception as error:
-    st.error(f"Could not read the uploaded file: {error}")
+except ValueError as error:
+    # Only show expected validation messages, never raw parser/system exceptions.
+    st.error(str(error))
+    st.stop()
+except Exception:
+    st.error(
+        "CleanSheet could not safely read this file. Check that it is a valid CSV "
+        "or .xlsx workbook within the stated size and complexity limits."
+    )
     st.stop()
 
 
-# Keep a separate copy. Never modify the uploaded DataFrame directly.
 original = original.copy(deep=True)
 
 if original.empty:
@@ -294,7 +335,6 @@ with tab_clean:
 
         st.markdown("#### Optional numeric conversion")
 
-        # Position-based labels keep columns selectable even when names repeat.
         conversion_options = [
             f"{position + 1}. {str(column)}"
             for position, column in enumerate(original.columns)
@@ -370,7 +410,6 @@ with tab_clean:
                 numeric_series = pd.to_numeric(series, errors="coerce")
                 after_missing = int(numeric_series.isna().sum())
 
-                # Assign by position to support duplicate column names safely.
                 cleaned.isetitem(position, numeric_series)
 
                 converted.append({
@@ -448,14 +487,16 @@ if (
     st.subheader("Download your results")
 
     try:
-        excel_bytes = dataframe_to_excel(cleaned)
+        safe_export = spreadsheet_safe_dataframe(cleaned)
+        excel_bytes = dataframe_to_excel(safe_export)
+        csv_bytes = safe_export.to_csv(index=False).encode("utf-8-sig")
 
         d1, d2, d3 = st.columns(3)
 
         with d1:
             st.download_button(
                 "Download cleaned CSV",
-                data=cleaned.to_csv(index=False).encode("utf-8-sig"),
+                data=csv_bytes,
                 file_name=cleaned_filename(uploaded_file.name, ".csv"),
                 mime="text/csv",
                 use_container_width=True,
@@ -482,8 +523,11 @@ if (
                 use_container_width=True,
             )
 
-    except Exception as error:
-        st.error(f"Could not prepare downloads: {error}")
+    except Exception:
+        st.error(
+            "CleanSheet could not prepare the downloads. Try a smaller file or "
+            "a different cleaning selection."
+        )
 
     with st.expander("View per-column missing-value changes"):
         column_report = pd.DataFrame(report["column_missing_values"])
