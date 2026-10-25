@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import csv
+import re
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 import pandas as pd
-from openpyxl import load_workbook
+from defusedxml import ElementTree as SafeET
 
 
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_ROWS = 100_000
 MAX_COLUMNS = 500
+MAX_CELLS = 2_000_000
 MAX_FIELD_CHARS = 1_000_000
 MAX_XLSX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_XLSX_ENTRIES = 2_000
@@ -36,6 +38,7 @@ def _validate_csv_structure(raw_bytes: bytes, encoding: str) -> None:
     """Bound CSV dimensions and field sizes before loading into pandas."""
     csv.field_size_limit(MAX_FIELD_CHARS)
     row_count = 0
+    cell_count = 0
     try:
         with TextIOWrapper(BytesIO(raw_bytes), encoding=encoding, newline="") as text:
             reader = csv.reader(text, strict=True)
@@ -43,14 +46,24 @@ def _validate_csv_structure(raw_bytes: bytes, encoding: str) -> None:
                 if not row:
                     continue
                 row_count += 1
+                cell_count += len(row)
                 if row_count > MAX_ROWS + 1:  # allow one header row
                     raise ValueError("CSV exceeds the 100,000-row limit.")
                 if len(row) > MAX_COLUMNS:
                     raise ValueError("CSV exceeds the 500-column limit.")
+                if cell_count > MAX_CELLS:
+                    raise ValueError("CSV exceeds the 2,000,000-cell processing limit.")
     except UnicodeDecodeError:
         raise
     except csv.Error as exc:
         raise ValueError("This CSV is malformed or contains a field that is too large.") from exc
+
+
+def _column_number(column_letters: str) -> int:
+    number = 0
+    for character in column_letters:
+        number = number * 26 + (ord(character) - ord("A") + 1)
+    return number
 
 
 def _validate_xlsx(raw_bytes: bytes) -> None:
@@ -69,34 +82,54 @@ def _validate_xlsx(raw_bytes: bytes) -> None:
                     or entry.file_size / entry.compress_size > MAX_COMPRESSION_RATIO
                 ):
                     raise ValueError("Excel workbook has a suspicious compression ratio.")
+
             names = set(archive.namelist())
             if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
                 raise ValueError("This is not a valid .xlsx workbook.")
             if "xl/vbaProject.bin" in names:
                 raise ValueError("Macro-enabled workbooks are not accepted.")
-    except BadZipFile as exc:
-        raise ValueError("This is not a valid .xlsx workbook.") from exc
 
-    workbook = None
-    try:
-        workbook = load_workbook(BytesIO(raw_bytes), read_only=True, data_only=True)
-        if not workbook.worksheets:
-            raise ValueError("Excel workbook contains no worksheets.")
-        sheet = workbook.worksheets[0]
-        # Ignore potentially inaccurate worksheet dimension metadata.
-        sheet.reset_dimensions()
-        for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-            if row_number > MAX_ROWS + 1:
-                raise ValueError("Excel workbook exceeds the 100,000-row limit.")
-            if len(row) > MAX_COLUMNS:
-                raise ValueError("Excel workbook exceeds the 500-column limit.")
+            worksheet_paths = sorted(
+                name for name in names
+                if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name)
+            )
+            if not worksheet_paths:
+                raise ValueError("Excel workbook contains no worksheets.")
+
+            # Stream-parse worksheet XML before handing it to openpyxl/pandas.
+            # This catches maliciously large row/column coordinates without
+            # expanding missing row ranges into large in-memory tuples.
+            for path in worksheet_paths:
+                row_count = 0
+                cell_count = 0
+                with archive.open(path) as worksheet_xml:
+                    for _, element in SafeET.iterparse(worksheet_xml, events=("end",)):
+                        tag = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+                        if tag == "row":
+                            row_count += 1
+                            row_ref = element.attrib.get("r")
+                            if row_ref and row_ref.isdigit() and int(row_ref) > MAX_ROWS + 1:
+                                raise ValueError("Excel workbook exceeds the 100,000-row limit.")
+                            if row_count > MAX_ROWS + 1:
+                                raise ValueError("Excel workbook exceeds the 100,000-row limit.")
+                        elif tag == "c":
+                            cell_count += 1
+                            cell_ref = element.attrib.get("r", "")
+                            match = re.fullmatch(r"([A-Z]+)(\d+)", cell_ref)
+                            if match:
+                                if _column_number(match.group(1)) > MAX_COLUMNS:
+                                    raise ValueError("Excel workbook exceeds the 500-column limit.")
+                                if int(match.group(2)) > MAX_ROWS + 1:
+                                    raise ValueError("Excel workbook exceeds the 100,000-row limit.")
+                            if cell_count > MAX_CELLS:
+                                raise ValueError("Excel workbook exceeds the 2,000,000-cell processing limit.")
+                        element.clear()
     except ValueError:
         raise
+    except BadZipFile as exc:
+        raise ValueError("This is not a valid .xlsx workbook.") from exc
     except Exception as exc:
         raise ValueError("Could not safely inspect this Excel workbook.") from exc
-    finally:
-        if workbook is not None:
-            workbook.close()
 
 
 def read_tabular_file(file_obj, filename: str) -> pd.DataFrame:
