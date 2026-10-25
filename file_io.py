@@ -47,7 +47,7 @@ def _validate_csv_structure(raw_bytes: bytes, encoding: str) -> None:
                     continue
                 row_count += 1
                 cell_count += len(row)
-                if row_count > MAX_ROWS + 1:  # allow one header row
+                if row_count > MAX_ROWS + 1:
                     raise ValueError("CSV exceeds the 100,000-row limit.")
                 if len(row) > MAX_COLUMNS:
                     raise ValueError("CSV exceeds the 500-column limit.")
@@ -96,34 +96,42 @@ def _validate_xlsx(raw_bytes: bytes) -> None:
             if not worksheet_paths:
                 raise ValueError("Excel workbook contains no worksheets.")
 
-            # Stream-parse worksheet XML before handing it to openpyxl/pandas.
-            # This catches maliciously large row/column coordinates without
-            # expanding missing row ranges into large in-memory tuples.
+            # Stream-parse worksheet XML and prune parsed nodes as we go.
+            # This avoids expanding malicious row coordinates into large tuples
+            # and avoids retaining the entire worksheet XML tree in memory.
             for path in worksheet_paths:
                 row_count = 0
                 cell_count = 0
+                stack = []
                 with archive.open(path) as worksheet_xml:
-                    for _, element in SafeET.iterparse(worksheet_xml, events=("end",)):
-                        tag = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
-                        if tag == "row":
-                            row_count += 1
-                            row_ref = element.attrib.get("r")
-                            if row_ref and row_ref.isdigit() and int(row_ref) > MAX_ROWS + 1:
-                                raise ValueError("Excel workbook exceeds the 100,000-row limit.")
-                            if row_count > MAX_ROWS + 1:
-                                raise ValueError("Excel workbook exceeds the 100,000-row limit.")
-                        elif tag == "c":
-                            cell_count += 1
-                            cell_ref = element.attrib.get("r", "")
-                            match = re.fullmatch(r"([A-Z]+)(\d+)", cell_ref)
-                            if match:
-                                if _column_number(match.group(1)) > MAX_COLUMNS:
-                                    raise ValueError("Excel workbook exceeds the 500-column limit.")
-                                if int(match.group(2)) > MAX_ROWS + 1:
+                    for event, element in SafeET.iterparse(
+                        worksheet_xml, events=("start", "end")
+                    ):
+                        if event == "start":
+                            stack.append(element)
+                            tag = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+                            if tag == "row":
+                                row_count += 1
+                                row_ref = element.attrib.get("r")
+                                if row_ref and row_ref.isdigit() and int(row_ref) > MAX_ROWS + 1:
                                     raise ValueError("Excel workbook exceeds the 100,000-row limit.")
-                            if cell_count > MAX_CELLS:
-                                raise ValueError("Excel workbook exceeds the 2,000,000-cell processing limit.")
-                        element.clear()
+                                if row_count > MAX_ROWS + 1:
+                                    raise ValueError("Excel workbook exceeds the 100,000-row limit.")
+                            elif tag == "c":
+                                cell_count += 1
+                                cell_ref = element.attrib.get("r", "")
+                                match = re.fullmatch(r"([A-Z]+)(\d+)", cell_ref)
+                                if match:
+                                    if _column_number(match.group(1)) > MAX_COLUMNS:
+                                        raise ValueError("Excel workbook exceeds the 500-column limit.")
+                                    if int(match.group(2)) > MAX_ROWS + 1:
+                                        raise ValueError("Excel workbook exceeds the 100,000-row limit.")
+                                if cell_count > MAX_CELLS:
+                                    raise ValueError("Excel workbook exceeds the 2,000,000-cell processing limit.")
+                        else:
+                            stack.pop()
+                            if stack:
+                                stack[-1].remove(element)
     except ValueError:
         raise
     except BadZipFile as exc:
