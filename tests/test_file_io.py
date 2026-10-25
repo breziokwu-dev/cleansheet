@@ -2,8 +2,14 @@ from io import BytesIO
 
 import pandas as pd
 import pytest
+from openpyxl import Workbook
 
-from file_io import cleaned_filename, read_tabular_file
+import file_io
+from file_io import (
+    cleaned_filename,
+    read_tabular_file,
+    spreadsheet_safe_dataframe,
+)
 
 
 def test_reads_utf8_csv_with_bom():
@@ -21,6 +27,20 @@ def test_reads_common_windows_encoded_csv():
     assert frame.loc[0, "city"] == "Montréal"
 
 
+def test_reads_valid_xlsx():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["name", "score"])
+    sheet.append(["Ada", 10])
+    upload = BytesIO()
+    workbook.save(upload)
+    upload.seek(0)
+
+    frame = read_tabular_file(upload, "people.xlsx")
+
+    assert frame.to_dict("records") == [{"name": "Ada", "score": 10}]
+
+
 def test_rejects_unsupported_file_extension():
     with pytest.raises(ValueError, match="Unsupported file type"):
         read_tabular_file(BytesIO(b"data"), "people.xls")
@@ -29,6 +49,29 @@ def test_rejects_unsupported_file_extension():
 def test_rejects_empty_file_with_helpful_message():
     with pytest.raises(ValueError, match="file is empty"):
         read_tabular_file(BytesIO(b""), "empty.csv")
+
+
+def test_rejects_upload_over_size_limit():
+    with pytest.raises(ValueError, match="10 MB upload limit"):
+        read_tabular_file(BytesIO(b"x" * (file_io.MAX_UPLOAD_BYTES + 1)), "large.csv")
+
+
+def test_rejects_csv_over_column_limit(monkeypatch):
+    monkeypatch.setattr(file_io, "MAX_COLUMNS", 2)
+    with pytest.raises(ValueError, match="500-column limit"):
+        read_tabular_file(BytesIO(b"a,b,c\n1,2,3\n"), "wide.csv")
+
+
+def test_rejects_csv_over_row_limit(monkeypatch):
+    monkeypatch.setattr(file_io, "MAX_ROWS", 2)
+    with pytest.raises(ValueError, match="100,000-row limit"):
+        read_tabular_file(BytesIO(b"name\nAda\nLin\nSam\n"), "tall.csv")
+
+
+def test_rejects_csv_over_cell_limit(monkeypatch):
+    monkeypatch.setattr(file_io, "MAX_CELLS", 4)
+    with pytest.raises(ValueError, match="2,000,000-cell processing limit"):
+        read_tabular_file(BytesIO(b"a,b\n1,2\n3,4\n"), "many-cells.csv")
 
 
 def test_reports_csv_without_readable_content():
@@ -42,10 +85,37 @@ def test_download_filename_uses_safe_source_name():
     assert cleaned_filename("people.csv", ".json") == "people_cleaning_report.json"
 
 
+def test_download_filename_is_length_limited():
+    name = cleaned_filename(("x" * 500) + ".csv", ".csv")
+    assert len(name) <= 112
+
+
 def test_rejects_unsupported_download_extension():
     with pytest.raises(ValueError, match="Unsupported output extension"):
         cleaned_filename("people.csv", ".exe")
 
+
 def test_invalid_excel_file_has_helpful_message():
     with pytest.raises(ValueError, match="valid .xlsx workbook"):
         read_tabular_file(BytesIO(b"not an excel workbook"), "broken.xlsx")
+
+
+def test_spreadsheet_export_neutralizes_formula_like_text_and_keeps_numbers():
+    original = pd.DataFrame({
+        "text": ["=1+1", "  +1", "-12", "@SUM(A1:A2)", "＝1+1", "ordinary"],
+        "number": [-12, 2, 3, 4, 5, 6],
+    })
+    safe = spreadsheet_safe_dataframe(original)
+
+    assert safe["text"].tolist() == [
+        "'=1+1", "'  +1", "'-12", "'@SUM(A1:A2)", "'＝1+1", "ordinary"
+    ]
+    assert safe["number"].tolist() == [-12, 2, 3, 4, 5, 6]
+    assert original.loc[0, "text"] == "=1+1"
+
+
+def test_spreadsheet_export_neutralizes_formula_like_headers():
+    original = pd.DataFrame([["value"]], columns=["=HYPERLINK"])
+    safe = spreadsheet_safe_dataframe(original)
+
+    assert safe.columns.tolist() == ["'=HYPERLINK"]
